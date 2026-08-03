@@ -40,6 +40,15 @@ def main(argv: list[str] | None = None) -> None:
         help="Historical price period to fetch (default: 1y)",
     )
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Launch the web dashboard",
+    )
+    serve_parser.add_argument(
+        "--host", type=str, default="127.0.0.1", help="Bind host (default: 127.0.0.1)"
+    )
+    serve_parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -48,6 +57,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "analyze":
         _run_analyze(args.ticker, fast=args.fast, period=args.period)
+    elif args.command == "serve":
+        _run_serve(args.host, args.port)
 
 
 def _run_analyze(ticker: str, fast: bool = False, period: str = "1y") -> None:
@@ -120,6 +131,17 @@ def _run_analyze(ticker: str, fast: bool = False, period: str = "1y") -> None:
     from trader_agent.analysis.report import render_report
 
     render_report(result, console=console)
+
+
+def _run_serve(host: str, port: int) -> None:
+    import uvicorn
+
+    console = Console()
+    console.print(
+        f"\n  [bold bright_cyan]Trader Agent Dashboard[/bold bright_cyan]"
+        f"  →  [link=http://{host}:{port}]http://{host}:{port}[/link]\n"
+    )
+    uvicorn.run("trader_agent.web.app:app", host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
