@@ -74,6 +74,8 @@ Raw text is scored by a FinBERT NLP pipeline into normalized sentiment (bullish 
 | Data source       | yfinance (Yahoo Finance, no API key needed)         |
 | CLI display       | rich (formatted terminal tables and panels)          |
 | Fast sentiment    | VADER (vaderSentiment, instant fallback for FinBERT) |
+| Web dashboard     | FastAPI + uvicorn (local web UI)                     |
+| Symbol resolution | yfinance Search (ticker or company name → symbol)    |
 | Containers        | Docker Compose (TimescaleDB for local dev)          |
 
 ## Project Structure
@@ -108,15 +110,20 @@ trader-agent/
 │       │   ├── train.py       # Training pipeline
 │       │   ├── predict.py     # Inference
 │       │   └── registry.py    # Model versioning
-│       ├── analysis/          # On-demand stock analysis (CLI)
+│       ├── analysis/          # On-demand stock analysis
 │       │   ├── fetcher.py     # yfinance data fetcher
+│       │   ├── resolver.py    # Fuzzy symbol resolver (name → ticker)
 │       │   ├── technical.py   # RSI, MACD, SMA, Bollinger, volatility
 │       │   ├── fundamental.py # P/E, D/E, EPS growth, FCF
 │       │   ├── sentiment.py   # FinBERT / VADER sentiment scoring
 │       │   ├── analyst.py     # Analyst recommendation consensus
 │       │   ├── scoring.py     # Weighted aggregator, rating, risk
 │       │   └── report.py      # Rich terminal report renderer
-│       ├── cli.py             # CLI entry point (analyze command)
+│       ├── web/               # Web dashboard
+│       │   ├── app.py         # FastAPI app + /api/analyze endpoint
+│       │   └── static/
+│       │       └── index.html # Single-page dashboard UI
+│       ├── cli.py             # CLI entry point (analyze, serve)
 │       ├── __main__.py        # python -m trader_agent support
 │       ├── alerts/            # Notifications
 │       │   ├── webhook.py
@@ -177,15 +184,19 @@ alembic upgrade head
 
 ### Analyze a stock
 
-```bash
-# Full analysis with FinBERT sentiment (slower, more accurate)
-python -m trader_agent analyze AAPL
+The input is **fuzzy** -- you can pass a ticker symbol or a company name. The resolver
+tries the input as a direct ticker first; if that fails it searches Yahoo Finance
+for matching equities.
 
-# Fast mode -- uses VADER sentiment (instant, less accurate)
+```bash
+# By ticker symbol
+python -m trader_agent analyze AAPL
 python -m trader_agent analyze MSFT --fast
 
-# Custom historical period
-python -m trader_agent analyze GOOGL --period 2y
+# By company name (auto-resolves to the correct ticker)
+python -m trader_agent analyze apple --fast
+python -m trader_agent analyze marvel --fast     # → MRVL
+python -m trader_agent analyze "tesla" --period 2y
 
 # Also available as an installed script
 trader-analyze analyze TSLA --fast
@@ -208,6 +219,23 @@ score that maps to a rating:
 The output includes price target projections (bear/base/bull) at 1, 2, and 3 month
 horizons, plus a risk classification (LOW / MEDIUM / HIGH) based on volatility and
 leverage. No API keys are required -- all data comes from yfinance.
+
+### Web dashboard
+
+A local web dashboard provides the same analysis through a browser UI.
+
+```bash
+# Start on default port 8000
+python -m trader_agent serve
+
+# Custom host/port
+python -m trader_agent serve --host 0.0.0.0 --port 3000
+```
+
+The dashboard is a single-page app served by FastAPI. The backend exposes a
+`GET /api/analyze?query=...&fast=true&period=1y` endpoint that returns the full
+analysis result as JSON. The frontend renders signal gauges, price target tables,
+key metrics, and a composite score gauge.
 
 ### Day-to-day development
 

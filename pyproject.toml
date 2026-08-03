@@ -42,6 +42,11 @@ dependencies = [
     # CLI / display
     "rich>=13.7",
 
+    # Web dashboard
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+
     # Scheduling
     "apscheduler>=3.10",
 ]
@@ -59,6 +64,7 @@ dev = [
 [project.scripts]
 trader-ingest = "trader_agent.ingestion.scheduler:start_scheduler"
 trader-analyze = "trader_agent.cli:main"
+trader-dashboard = "trader_agent.cli:main"
 
 # ---------------------------------------------------------------------------
 # Tool configuration
