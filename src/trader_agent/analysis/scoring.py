@@ -10,7 +10,9 @@ import structlog
 
 from trader_agent.analysis.analyst import AnalystSignals
 from trader_agent.analysis.fundamental import FundamentalSignals
+from trader_agent.analysis.institutional import InstitutionalSignals
 from trader_agent.analysis.sentiment import SentimentSignals
+from trader_agent.analysis.social import SocialSignals
 from trader_agent.analysis.technical import TechnicalSignals
 
 logger = structlog.get_logger(__name__)
@@ -31,10 +33,12 @@ class RiskLevel(StrEnum):
 
 
 SIGNAL_WEIGHTS = {
-    "technical": 0.30,
-    "fundamental": 0.25,
-    "sentiment": 0.25,
-    "analyst": 0.20,
+    "technical": 0.25,
+    "fundamental": 0.20,
+    "sentiment": 0.20,
+    "analyst": 0.15,
+    "social": 0.10,
+    "institutional": 0.10,
 }
 
 
@@ -65,6 +69,8 @@ class AnalysisResult:
     fundamental: FundamentalSignals = field(default_factory=FundamentalSignals)
     sentiment: SentimentSignals = field(default_factory=SentimentSignals)
     analyst: AnalystSignals = field(default_factory=AnalystSignals)
+    social: SocialSignals = field(default_factory=SocialSignals)
+    institutional: InstitutionalSignals = field(default_factory=InstitutionalSignals)
 
     price_targets: list[PriceTarget] = field(default_factory=list)
 
@@ -81,8 +87,13 @@ def compute_analysis(
     fundamental: FundamentalSignals,
     sentiment: SentimentSignals,
     analyst: AnalystSignals,
+    social: SocialSignals | None = None,
+    institutional: InstitutionalSignals | None = None,
 ) -> AnalysisResult:
     """Aggregate all signals into a final recommendation."""
+    social = social or SocialSignals()
+    institutional = institutional or InstitutionalSignals()
+
     result = AnalysisResult(
         symbol=symbol,
         company_name=company_name,
@@ -93,13 +104,20 @@ def compute_analysis(
         fundamental=fundamental,
         sentiment=sentiment,
         analyst=analyst,
+        social=social,
+        institutional=institutional,
     )
 
+    def _safe(val: float) -> float:
+        return 0.0 if (np.isnan(val) or np.isinf(val)) else float(val)
+
     result.signal_breakdown = {
-        "technical": technical.composite,
-        "fundamental": fundamental.composite,
-        "sentiment": sentiment.composite,
-        "analyst": analyst.composite,
+        "technical": _safe(technical.composite),
+        "fundamental": _safe(fundamental.composite),
+        "sentiment": _safe(sentiment.composite),
+        "analyst": _safe(analyst.composite),
+        "social": _safe(social.composite),
+        "institutional": _safe(institutional.composite),
     }
 
     result.composite_score = sum(
@@ -112,6 +130,10 @@ def compute_analysis(
     result.risk_level = _classify_risk(
         volatility_annual=technical.volatility_annual,
         debt_to_equity=fundamental.debt_to_equity,
+        sector=sector,
+        market_cap=fundamental.market_cap,
+        institutional_pct=fundamental.institutional_pct,
+        revenue_growth=fundamental.revenue_growth,
     )
 
     result.price_targets = _project_prices(
@@ -142,15 +164,85 @@ def _map_rating(score: float) -> Rating:
     return Rating.DONT_BUY
 
 
+SECTOR_VOLATILITY_NORMS: dict[str, float] = {
+    "Technology": 0.35,
+    "Healthcare": 0.30,
+    "Financial Services": 0.25,
+    "Consumer Cyclical": 0.28,
+    "Consumer Defensive": 0.22,
+    "Industrials": 0.25,
+    "Energy": 0.40,
+    "Utilities": 0.18,
+    "Real Estate": 0.25,
+    "Communication Services": 0.30,
+    "Basic Materials": 0.28,
+}
+DEFAULT_VOLATILITY_NORM = 0.28
+
+SECTOR_DE_NORMS: dict[str, float] = {
+    "Technology": 0.8,
+    "Healthcare": 0.6,
+    "Financial Services": 3.0,
+    "Consumer Cyclical": 1.2,
+    "Consumer Defensive": 1.0,
+    "Industrials": 1.0,
+    "Energy": 0.8,
+    "Utilities": 1.5,
+    "Real Estate": 1.8,
+    "Communication Services": 1.0,
+    "Basic Materials": 0.7,
+}
+DEFAULT_DE_NORM = 1.0
+
+
 def _classify_risk(
     volatility_annual: float,
     debt_to_equity: float | None,
+    sector: str = "Unknown",
+    market_cap: float = 0.0,
+    institutional_pct: float = 0.0,
+    revenue_growth: float | None = None,
 ) -> RiskLevel:
-    de = debt_to_equity if debt_to_equity is not None else 0.5
+    """Multi-factor risk scoring: 0.0 (safest) to 1.0 (riskiest)."""
+    sub_scores: list[tuple[float, float]] = []
 
-    if volatility_annual >= 0.40 or de >= 2.0:
+    vol_norm = SECTOR_VOLATILITY_NORMS.get(sector, DEFAULT_VOLATILITY_NORM)
+    vol_ratio = volatility_annual / vol_norm if vol_norm > 0 else 1.0
+    vol_risk = float(np.clip((vol_ratio - 0.5) / 1.5, 0.0, 1.0))
+    sub_scores.append((vol_risk, 0.25))
+
+    de = debt_to_equity if debt_to_equity is not None else 0.5
+    de_norm = SECTOR_DE_NORMS.get(sector, DEFAULT_DE_NORM)
+    de_ratio = de / de_norm if de_norm > 0 else 1.0
+    de_risk = float(np.clip((de_ratio - 0.3) / 2.0, 0.0, 1.0))
+    sub_scores.append((de_risk, 0.20))
+
+    if market_cap > 200_000_000_000:
+        cap_risk = 0.05
+    elif market_cap > 50_000_000_000:
+        cap_risk = 0.15
+    elif market_cap > 10_000_000_000:
+        cap_risk = 0.30
+    elif market_cap > 2_000_000_000:
+        cap_risk = 0.55
+    elif market_cap > 300_000_000:
+        cap_risk = 0.75
+    else:
+        cap_risk = 0.95
+    sub_scores.append((cap_risk, 0.25))
+
+    inst_risk = float(np.clip(1.0 - institutional_pct * 1.3, 0.0, 1.0))
+    sub_scores.append((inst_risk, 0.15))
+
+    rev_risk = float(np.clip(0.5 - revenue_growth, 0.0, 1.0)) if revenue_growth is not None else 0.5
+    sub_scores.append((rev_risk, 0.15))
+
+    total_weight = sum(w for _, w in sub_scores)
+    risk_score = sum(s * w for s, w in sub_scores) / total_weight if total_weight > 0 else 0.5
+
+    if risk_score >= 0.60:
         return RiskLevel.HIGH
-    if volatility_annual < 0.25 and de < 1.0:
+    if risk_score <= 0.35:
         return RiskLevel.LOW
     return RiskLevel.MEDIUM
 

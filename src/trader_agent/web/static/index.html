@@ -237,7 +237,7 @@
     /* Signal gauge bars */
     .signals-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 16px;
     }
     @media (max-width: 640px) {
@@ -518,11 +518,14 @@ function render(d, query) {
 
 function renderSignals(d) {
   const grid = $('signalsGrid');
+  const sb = d.signal_breakdown || {};
   const signals = [
-    { label: 'Technical', score: d.signal_breakdown.technical, weight: 30 },
-    { label: 'Fundamental', score: d.signal_breakdown.fundamental, weight: 25 },
-    { label: 'Sentiment', score: d.signal_breakdown.sentiment, weight: 25 },
-    { label: 'Analyst', score: d.signal_breakdown.analyst, weight: 20 },
+    { label: 'Technical', score: sb.technical || 0, weight: 25 },
+    { label: 'Fundamental', score: sb.fundamental || 0, weight: 20 },
+    { label: 'Sentiment', score: sb.sentiment || 0, weight: 20 },
+    { label: 'Analyst', score: sb.analyst || 0, weight: 15 },
+    { label: 'Social', score: sb.social || 0, weight: 10 },
+    { label: 'Institutional', score: sb.institutional || 0, weight: 10 },
   ];
 
   grid.innerHTML = signals.map(s => {
@@ -596,6 +599,29 @@ function renderMetrics(d) {
   metrics.push({ label: 'Analyst Total', val: d.analyst.total_recommendations.toString() });
   metrics.push({ label: 'Analyst Consensus', val: d.analyst.consensus_label });
   metrics.push({ label: 'Sentiment Split', val: `${d.sentiment.bullish_pct.toFixed(0)}% / ${d.sentiment.neutral_pct.toFixed(0)}% / ${d.sentiment.bearish_pct.toFixed(0)}%` });
+
+  const soc = d.social || {};
+  metrics.push({ label: 'Social Posts', val: (soc.post_count || 0).toString() });
+  if (soc.post_count > 0) {
+    metrics.push({ label: 'Social Avg Score', val: (soc.avg_score || 0).toFixed(3), color: soc.avg_score > 0 ? 'green' : soc.avg_score < 0 ? 'red' : '' });
+    metrics.push({ label: 'Social Split', val: `${(soc.bullish_pct || 0).toFixed(0)}% / ${(soc.neutral_pct || 0).toFixed(0)}% / ${(soc.bearish_pct || 0).toFixed(0)}%` });
+  }
+
+  const inst = d.institutional || {};
+  const instPct = inst.institutional_pct || 0;
+  metrics.push({ label: 'Inst. Ownership', val: (instPct * 100).toFixed(1) + '%', color: instPct > 0.6 ? 'green' : '' });
+  metrics.push({ label: 'Inst. Holders', val: (inst.institutional_holders_count || 0).toString() });
+  const iBuys = inst.insider_buy_count || 0;
+  const iSells = inst.insider_sell_count || 0;
+  if (iBuys + iSells > 0) {
+    metrics.push({ label: 'Insider Activity', val: `Buy: ${iBuys} / Sell: ${iSells}`, color: iBuys > iSells ? 'green' : iBuys < iSells ? 'red' : '' });
+  }
+
+  const mcap = (d.fundamental || {}).market_cap || 0;
+  if (mcap > 0) {
+    const mcapStr = mcap >= 1e12 ? (mcap / 1e12).toFixed(2) + 'T' : mcap >= 1e9 ? (mcap / 1e9).toFixed(1) + 'B' : (mcap / 1e6).toFixed(0) + 'M';
+    metrics.push({ label: 'Market Cap', val: '$' + mcapStr });
+  }
 
   grid.innerHTML = metrics.map(m => `
     <div class="metric">

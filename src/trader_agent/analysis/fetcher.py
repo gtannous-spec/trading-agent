@@ -21,6 +21,9 @@ class TickerData:
     industry: str = ""
     current_price: float = 0.0
     currency: str = "USD"
+    market_cap: float = 0.0
+    institutional_pct: float = 0.0
+    revenue_growth: float | None = None
 
     prices: pd.DataFrame = field(default_factory=pd.DataFrame)
     financials: pd.DataFrame = field(default_factory=pd.DataFrame)
@@ -29,6 +32,10 @@ class TickerData:
     cashflow: pd.DataFrame = field(default_factory=pd.DataFrame)
     recommendations: pd.DataFrame = field(default_factory=pd.DataFrame)
     news: list[dict] = field(default_factory=list)
+
+    institutional_holders: pd.DataFrame = field(default_factory=pd.DataFrame)
+    major_holders: pd.DataFrame = field(default_factory=pd.DataFrame)
+    insider_transactions: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     info: dict = field(default_factory=dict)
 
@@ -52,6 +59,9 @@ def fetch_ticker_data(symbol: str, period: str = "1y") -> TickerData:
     data.industry = info.get("industry", "Unknown")
     data.currency = info.get("currency", "USD")
     data.current_price = info.get("currentPrice") or info.get("regularMarketPrice") or 0.0
+    data.market_cap = info.get("marketCap") or 0.0
+    data.institutional_pct = info.get("heldPercentInstitutions") or 0.0
+    data.revenue_growth = info.get("revenueGrowth")
 
     data.prices = _safe_get(lambda: ticker.history(period=period), pd.DataFrame(), "prices", symbol)
 
@@ -69,6 +79,16 @@ def fetch_ticker_data(symbol: str, period: str = "1y") -> TickerData:
     )
 
     data.news = _safe_get(lambda: ticker.news or [], [], "news", symbol)
+
+    data.institutional_holders = _safe_get(
+        lambda: ticker.institutional_holders, pd.DataFrame(), "institutional_holders", symbol
+    )
+    data.major_holders = _safe_get(
+        lambda: ticker.major_holders, pd.DataFrame(), "major_holders", symbol
+    )
+    data.insider_transactions = _safe_get(
+        lambda: ticker.insider_transactions, pd.DataFrame(), "insider_transactions", symbol
+    )
 
     logger.info(
         "fetch_complete",

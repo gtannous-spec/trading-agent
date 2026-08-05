@@ -72,6 +72,7 @@ Raw text is scored by a FinBERT NLP pipeline into normalized sentiment (bullish 
 | Testing           | pytest + pytest-cov + pytest-asyncio                |
 | Linting           | ruff                                                |
 | Data source       | yfinance (Yahoo Finance, no API key needed)         |
+| Social sentiment  | Reddit public JSON (r/wallstreetbets, r/stocks, r/investing) |
 | CLI display       | rich (formatted terminal tables and panels)          |
 | Fast sentiment    | VADER (vaderSentiment, instant fallback for FinBERT) |
 | Web dashboard     | FastAPI + uvicorn (local web UI)                     |
@@ -117,6 +118,8 @@ trader-agent/
 │       │   ├── fundamental.py # P/E, D/E, EPS growth, FCF
 │       │   ├── sentiment.py   # FinBERT / VADER sentiment scoring
 │       │   ├── analyst.py     # Analyst recommendation consensus
+│       │   ├── reddit.py      # Reddit social sentiment (3 subreddits)
+│       │   ├── institutional.py # Institutional holdings + insider trades
 │       │   ├── scoring.py     # Weighted aggregator, rating, risk
 │       │   └── report.py      # Rich terminal report renderer
 │       ├── web/               # Web dashboard
@@ -202,11 +205,23 @@ python -m trader_agent analyze "tesla" --period 2y
 trader-analyze analyze TSLA --fast
 ```
 
-The `analyze` command fetches live data from Yahoo Finance (via yfinance), computes
-technical indicators (RSI, MACD, SMA crossovers, Bollinger Bands), scores fundamentals
-(P/E, D/E, EPS growth, FCF trend), runs sentiment analysis on news headlines, and
-parses analyst recommendations. It then aggregates all signals into a weighted composite
-score that maps to a rating:
+The `analyze` command fetches live data from Yahoo Finance (via yfinance) and Reddit,
+computes technical indicators (RSI, MACD, SMA crossovers, Bollinger Bands), scores
+fundamentals (P/E, D/E, EPS growth, FCF), runs sentiment analysis on news headlines,
+scrapes Reddit (r/wallstreetbets, r/stocks, r/investing) for social sentiment,
+analyzes institutional holdings and insider transactions, and parses analyst
+recommendations. It aggregates six signal categories into a weighted composite score:
+
+| Signal         | Weight |
+|---------------|--------|
+| Technical      | 25%    |
+| Fundamental    | 20%    |
+| Sentiment      | 20%    |
+| Analyst        | 15%    |
+| Reddit         | 10%    |
+| Institutional  | 10%    |
+
+The composite score maps to a rating:
 
 | Score Range  | Rating      |
 |-------------|-------------|
@@ -216,9 +231,14 @@ score that maps to a rating:
 | -0.1 to 0.1 | HOLD        |
 | <= -0.1     | DON'T BUY   |
 
+The risk classification uses a multi-factor model (sector-normalized volatility,
+market cap, institutional ownership %, revenue growth, sector-normalized D/E) instead
+of raw thresholds, so large-cap stocks with high institutional backing don't get
+flagged as HIGH risk just because their sector is volatile.
+
 The output includes price target projections (bear/base/bull) at 1, 2, and 3 month
-horizons, plus a risk classification (LOW / MEDIUM / HIGH) based on volatility and
-leverage. No API keys are required -- all data comes from yfinance.
+horizons. No API keys are required -- all data comes from yfinance and Reddit's
+public JSON API.
 
 ### Web dashboard
 

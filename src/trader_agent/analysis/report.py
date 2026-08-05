@@ -100,7 +100,14 @@ def _render_signal_breakdown(console: Console, r: AnalysisResult) -> None:
     table.add_column("Contribution", justify="right")
     table.add_column("Direction", justify="center")
 
-    weights = {"technical": 0.30, "fundamental": 0.25, "sentiment": 0.25, "analyst": 0.20}
+    weights = {
+        "technical": 0.25,
+        "fundamental": 0.20,
+        "sentiment": 0.20,
+        "analyst": 0.15,
+        "social": 0.10,
+        "institutional": 0.10,
+    }
 
     for name, score in r.signal_breakdown.items():
         w = weights[name]
@@ -174,6 +181,28 @@ def _render_details(console: Console, r: AnalysisResult) -> None:
             f"Strong Buy: {r.analyst.strong_buy} | Buy: {r.analyst.buy} | "
             f"Hold: {r.analyst.hold} | Sell: {r.analyst.sell} | "
             f"Strong Sell: {r.analyst.strong_sell}",
+        )
+
+    table.add_row("Social", "Posts Scored", str(r.social.post_count))
+    if r.social.post_count > 0:
+        table.add_row("Social", "Avg Score", f"{r.social.avg_score:+.3f}")
+        table.add_row(
+            "Social",
+            "Distribution",
+            f"Bullish {r.social.bullish_pct:.0f}% / "
+            f"Neutral {r.social.neutral_pct:.0f}% / "
+            f"Bearish {r.social.bearish_pct:.0f}%",
+        )
+
+    inst_pct_str = f"{r.institutional.institutional_pct:.1%}"
+    table.add_row("Institutional", "Ownership", inst_pct_str)
+    table.add_row("Institutional", "Holders", str(r.institutional.institutional_holders_count))
+    if r.institutional.insider_buy_count + r.institutional.insider_sell_count > 0:
+        table.add_row(
+            "Institutional",
+            "Insider Activity",
+            f"Buys: {r.institutional.insider_buy_count} | "
+            f"Sells: {r.institutional.insider_sell_count}",
         )
 
     console.print(table)
