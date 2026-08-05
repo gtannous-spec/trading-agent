@@ -14,9 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from trader_agent.analysis.analyst import compute_analyst_signals
 from trader_agent.analysis.fetcher import fetch_ticker_data
 from trader_agent.analysis.fundamental import compute_fundamental_signals
+from trader_agent.analysis.institutional import compute_institutional_signals
 from trader_agent.analysis.resolver import resolve_symbol
 from trader_agent.analysis.scoring import compute_analysis
 from trader_agent.analysis.sentiment import compute_sentiment_signals
+from trader_agent.analysis.social import compute_social_signals
 from trader_agent.analysis.technical import compute_technical_signals
 
 logger = structlog.get_logger(__name__)
@@ -57,6 +59,8 @@ async def analyze(query: str, fast: bool = True, period: str = "1y") -> dict[str
     fund = compute_fundamental_signals(data)
     sent = compute_sentiment_signals(data.news, fast_mode=fast)
     analyst = compute_analyst_signals(data.recommendations)
+    social = compute_social_signals(data.symbol, data.company_name, fast_mode=fast)
+    institutional = compute_institutional_signals(data)
 
     result = compute_analysis(
         symbol=data.symbol,
@@ -68,6 +72,8 @@ async def analyze(query: str, fast: bool = True, period: str = "1y") -> dict[str
         fundamental=fund,
         sentiment=sent,
         analyst=analyst,
+        social=social,
+        institutional=institutional,
     )
 
     payload = asdict(result)

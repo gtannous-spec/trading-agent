@@ -42,6 +42,10 @@ class FundamentalSignals:
     fcf_trend: float | None = None  # latest FCF as ratio of previous
     fcf_signal: float = 0.0  # [-1, 1]: improving (+) vs deteriorating (-)
 
+    market_cap: float = 0.0
+    institutional_pct: float = 0.0
+    revenue_growth: float | None = None
+
     composite: float = 0.0
 
 
@@ -67,6 +71,10 @@ def compute_fundamental_signals(data: TickerData) -> FundamentalSignals:
     signals.fcf_trend = _compute_fcf_trend(data.cashflow)
     if signals.fcf_trend is not None:
         signals.fcf_signal = float(np.clip((signals.fcf_trend - 1.0) * 2.0, -1.0, 1.0))
+
+    signals.market_cap = data.market_cap
+    signals.institutional_pct = data.institutional_pct
+    signals.revenue_growth = data.revenue_growth
 
     active = []
     weights = []

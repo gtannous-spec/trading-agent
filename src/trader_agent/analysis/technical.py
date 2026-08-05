@@ -46,7 +46,10 @@ def compute_technical_signals(prices: pd.DataFrame) -> TechnicalSignals:
         logger.warning("insufficient_price_data", rows=len(prices))
         return signals
 
-    close = prices["Close"].astype(float)
+    close = prices["Close"].astype(float).dropna()
+    if len(close) < 30:
+        logger.warning("insufficient_clean_price_data", rows=len(close))
+        return signals
 
     signals.rsi_14 = _rsi(close, 14)
     signals.rsi_signal = _rsi_to_signal(signals.rsi_14)
@@ -84,6 +87,14 @@ def compute_technical_signals(prices: pd.DataFrame) -> TechnicalSignals:
         signals.volatility_30d = float(returns.tail(30).std() * np.sqrt(252))
     signals.volatility_annual = float(returns.std() * np.sqrt(252))
 
+    def _safe(val: float) -> float:
+        return 0.0 if (np.isnan(val) or np.isinf(val)) else val
+
+    signals.rsi_signal = _safe(signals.rsi_signal)
+    signals.macd_signal = _safe(signals.macd_signal)
+    signals.sma_crossover_signal = _safe(signals.sma_crossover_signal)
+    signals.bb_signal = _safe(signals.bb_signal)
+
     signals.composite = (
         0.25 * signals.rsi_signal
         + 0.30 * signals.macd_signal
@@ -104,11 +115,13 @@ def compute_technical_signals(prices: pd.DataFrame) -> TechnicalSignals:
 
 def _rsi(series: pd.Series, period: int = 14) -> float:
     delta = series.diff()
-    gain = delta.clip(lower=0).rolling(window=period, min_periods=period).mean()
-    loss = (-delta.clip(upper=0)).rolling(window=period, min_periods=period).mean()
+    gain = delta.clip(lower=0).rolling(window=period, min_periods=1).mean()
+    loss = (-delta.clip(upper=0)).rolling(window=period, min_periods=1).mean()
 
     last_gain = gain.iloc[-1]
     last_loss = loss.iloc[-1]
+    if pd.isna(last_gain) or pd.isna(last_loss):
+        return 50.0
     if last_loss == 0:
         return 100.0 if last_gain > 0 else 50.0
     rs = last_gain / last_loss

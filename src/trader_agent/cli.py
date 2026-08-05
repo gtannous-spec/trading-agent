@@ -113,6 +113,16 @@ def _run_analyze(ticker: str, fast: bool = False, period: str = "1y") -> None:
 
         analyst = compute_analyst_signals(data.recommendations)
 
+    with console.status("[bold blue]Scanning social sentiment (StockTwits + Finviz)..."):
+        from trader_agent.analysis.social import compute_social_signals
+
+        social = compute_social_signals(data.symbol, data.company_name, fast_mode=fast)
+
+    with console.status("[bold blue]Analyzing institutional holdings..."):
+        from trader_agent.analysis.institutional import compute_institutional_signals
+
+        institutional = compute_institutional_signals(data)
+
     with console.status("[bold blue]Computing final score..."):
         from trader_agent.analysis.scoring import compute_analysis
 
@@ -126,6 +136,8 @@ def _run_analyze(ticker: str, fast: bool = False, period: str = "1y") -> None:
             fundamental=fund,
             sentiment=sent,
             analyst=analyst,
+            social=social,
+            institutional=institutional,
         )
 
     from trader_agent.analysis.report import render_report
